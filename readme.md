@@ -16,7 +16,7 @@ Jeśli natomiast prawa górna mała gra została już rozstrzygnięta wtedy grac
 Gra kończy się jeśli ułożenie rozstrzygniętych małych gier będzie jednym z możliwości wygrania (tak jak w standardowej grze Tic Tac Toe)
 
 
-Serwer gry kożysta z socketów aby umożliwić klientą połaćzenie oraz wątki aby obsługiwać wszystkich graczy jednocześnie.
+Serwer gry kożysta z socketów aby umożliwić klientą połączenie oraz wątki aby obsługiwać wszystkich graczy jednocześnie.
 Klient po poprawnym połączeniu zostaje umieszczony w pierwszym pokoju gdzie jest wolne miejsce.
 
 Ilość graczy jest nieograniczona. W razie potrzeby są tworzone nowe pokoje. Dzieje się to dynamicznie.
