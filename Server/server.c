@@ -13,14 +13,11 @@
 char client_message[128];
 char buffer[128];
 
-struct indexes{
-  int indexes[2];
-};
+
 struct player{
   int socket;
   int turn;
   int mark;
-  struct indexes indexes;
 };
 struct board{
   int board[9][9];
@@ -35,26 +32,89 @@ struct room{
   int lastMovei;
 };
 
-struct room rooms[3];
 
+typedef struct node {
+  struct room room;
+  struct node * next;
+} listNode;
 
+listNode * head = NULL;
 
+struct room createEmptyRoom();
+struct player createEmptyPlayer(int socket);
 
-struct indexes getIndexOfFirstFreeSpaceInArray(){
-  static struct indexes idxs;
-  idxs.indexes[0] = -1;
-  idxs.indexes[1] = -1;
-
-  for(int i=0; i<3; i++){
-    for(int j=0; j<2; j++){
-      if(rooms[i].players[j].socket == 0){
-        idxs.indexes[0] = i;
-        idxs.indexes[1] = j;
-        return idxs;
-      }
-    }
+listNode * addRoom(){
+  struct room newRoom = createEmptyRoom();
+  if(head == NULL){
+    head = (listNode *) malloc(sizeof(listNode));
+    head->room = newRoom;
+    head->next = NULL;
+    return head;
   }
-  return idxs;
+  listNode * curr = head;
+  while (curr->next != NULL) {
+    curr = curr->next;
+  }
+
+  curr->next = (listNode *) malloc(sizeof(listNode));  
+  curr->next->room = newRoom;
+  curr->next->next = NULL; 
+  return curr->next;
+}
+
+void printRooms2(){
+  listNode * curr = head;
+  while(curr != NULL){
+    printf("{%d, %d} ", curr->room.players[0].socket, curr->room.players[1].socket);
+    curr = curr->next;
+  }
+  printf("\n\n");
+}
+
+listNode * joinPlayerToRoom(struct player p){
+  listNode * curr = head;
+
+  //if there is 0 rooms case
+  if(curr == NULL){
+    curr = addRoom();
+    curr->room.players[0] = p;
+    return curr;
+  }
+  //check if space in rooms
+  while(curr != NULL){
+    if(curr->room.players[0].socket == 0) {
+      curr->room.players[0] = p;
+      return curr;
+    } else if(curr->room.players[1].socket == 0) {
+      curr->room.players[1] = p;
+      return curr;
+    }
+    curr = curr->next;
+  }
+  //there is no free space in rooms create new one
+  curr = addRoom();
+  curr->room.players[0] = p;
+  return curr;
+}
+
+void removePlayerFromRoom(int playerSocket){
+  listNode * curr = head;
+  struct player p = createEmptyPlayer(0);
+  while(curr != NULL){
+    if(curr->room.players[0].socket == playerSocket){
+      curr->room.players[0] = p;
+      return;
+    } else if(curr->room.players[1].socket == playerSocket){
+      curr->room.players[1] = p;
+      return;
+    }
+    curr = curr->next;
+  }
+}
+
+int getPlayerIndexInRoom(listNode * node, int playerSocket){
+  if(node->room.players[0].socket == playerSocket) return 0;
+  return 1;
 }
 
 void sendMsgToSocket(int socket, char * message){
@@ -62,42 +122,23 @@ void sendMsgToSocket(int socket, char * message){
   if (n < 0){printf("ERROR writing message to client socket");}
   
 }
-void sendMsgToRoom(int roomId, char * message){
-  sendMsgToSocket(rooms[roomId].players[0].socket, message);
-  sendMsgToSocket(rooms[roomId].players[1].socket, message); 
-}
-struct player createEmptyPlayer(){
-  struct player p;
-  struct indexes idxs;
-  for(int i=0; i<2; i++){idxs.indexes[i] = 0;}
 
-  p.socket = 0;
+void sendMsgToRoom(listNode * room, char * message){
+  sendMsgToSocket(room->room.players[0].socket, message);
+  sendMsgToSocket(room->room.players[1].socket, message); 
+}
+
+struct player createEmptyPlayer(int playerSocket){
+  struct player p;
+
+  p.socket = playerSocket;
   p.turn = 0;
   p.mark = 0;
-  p.indexes = idxs;
   return p;
 }
-struct room createEmptyRoom(){
-  struct room room;
-  struct board b; 
-  struct wBoard wb;
-  struct player p = createEmptyPlayer();
 
-  for(int i=0; i<9;i++){
-    for(int j=0; j<9; j++){b.board[i][j] = 0;}
-  }
-  for(int i=0; i<9; i++){wb.wb[i] = 0;}
-
-  for(int i=0; i<2; i++){room.players[i] = p;}
-  
-  room.board = b;
-  room.wb = wb;
-  room.lastMovei = 10;
-
-  return room;
-}
-int canInsertToBoard(int i, int j, int roomId){
-  if(rooms[roomId].board.board[i][j] == 0) return 1; 
+int canInsertToBoard(int i, int j, listNode * room){
+  if(room->room.board.board[i][j] == 0) return 1; 
   return 0;
   
 }
@@ -107,16 +148,13 @@ int validMovei(int i, int lastMovei){
   return 0;
 }
 
-int checkIfBothPlayerInRoom(int roomId){
-  if( ( rooms[roomId].players[0].socket != 0 ) && ( rooms[roomId].players[1].socket != 0 )){
-    return 1;
-  } else {
-    return 0;
-  }
+int checkIfBothPlayersInRoom(listNode * room){
+  if( ( room->room.players[0].socket != 0 ) && ( room->room.players[1].socket != 0 )) return 1;
+  return 0;
 }
 
 void printPlayerInfo(struct player player){
-  printf("{room(i):%d, index(j):%d, socket:%d, turn:%d, mark:%d}\n", player.indexes.indexes[0], player.indexes.indexes[1], player.socket, player.turn, player.mark);
+  printf("socket:%d, turn:%d, mark:%d}\n", player.socket, player.turn, player.mark);
 }
 
 void printBoard(int b[9][9], int wb[9]){
@@ -136,14 +174,6 @@ void printBoard(int b[9][9], int wb[9]){
 
   printf("Win board:\n{");
   for(int i=0; i<9; i++){printf("%d ", wb[i]);}
-  printf("}\n\n");
-}
-
-void printRooms(){
-  printf("{");
-  for(int i=0; i<3;i++){
-    printf("{%d, %d}, ",rooms[i].players[0].socket, rooms[i].players[1].socket);
-  }
   printf("}\n\n");
 }
 
@@ -180,7 +210,7 @@ int initServerSocket(){
       exit (EXIT_FAILURE);
   }
   serverAddr.sin_family = AF_INET;
-  serverAddr.sin_port = htons(1107);
+  serverAddr.sin_port = htons(1106);
   serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
 
   int r = bind(serverSocket, (struct sockaddr *) &serverAddr, sizeof(serverAddr));
@@ -198,53 +228,42 @@ int initServerSocket(){
   return serverSocket;
 }
 
-void startGame(int roomId){
-  rooms[roomId].players[0].mark = 1;
-  rooms[roomId].players[1].mark = 2;
-  rooms[roomId].players[0].turn = 1;
-  rooms[roomId].players[1].turn = 0;
-  sendMsgToSocket(rooms[roomId].players[0].socket, "MARK 1");
-  sendMsgToSocket(rooms[roomId].players[1].socket, "MARK 2");
-  sendMsgToSocket(rooms[roomId].players[0].socket, "TURN 1");
-  sendMsgToSocket(rooms[roomId].players[1].socket, "TURN 0");
+void startGame(listNode * room){
+  room->room.players[0].mark = 1;
+  room->room.players[1].mark = 2;
+  room->room.players[0].turn = 1;
+  room->room.players[1].turn = 0;
+  sendMsgToSocket(room->room.players[0].socket, "MARK 1");
+  sendMsgToSocket(room->room.players[1].socket, "MARK 2");
+  sendMsgToSocket(room->room.players[0].socket, "TURN 1");
+  sendMsgToSocket(room->room.players[1].socket, "TURN 0");
 }
+
+
 
 void * socketThread(void *arg){
   int newSocket = *((int *)arg);
   int n;
 
-  struct indexes idx_free_space = getIndexOfFirstFreeSpaceInArray();
-
-  if(idx_free_space.indexes[0] == -1){
-    printf("cant find free space. Exit thread\n");
-    pthread_exit(NULL);
-  }
-  struct player player = {newSocket, 0, 0, idx_free_space};
+  struct player player = createEmptyPlayer(newSocket);
+  listNode * room = joinPlayerToRoom(player);
   
   printf("Player connected. ");
   printPlayerInfo(player);
   
-  int roomId = player.indexes.indexes[0];
-  int playerIndexInRoom = player.indexes.indexes[1];
-
-  int opponentIndexInRoom;
-  if (playerIndexInRoom == 0){
-    opponentIndexInRoom = 1;
-  } else {
-    opponentIndexInRoom = 0;
-  }
-  //join player to room
-  rooms[roomId].players[playerIndexInRoom] = player;
-  printf("Room nr:%d = {p1_soc:%d, p2_soc:%d}\n\n", roomId, rooms[roomId].players[playerIndexInRoom].socket, rooms[roomId].players[opponentIndexInRoom].socket);
-  printRooms();
+  
+  int playerIndexInRoom = getPlayerIndexInRoom(room, newSocket);
+  int opponentIndexInRoom = (playerIndexInRoom == 0)? 1 : 0;
+  
+  printRooms2();
   
   sendMsgToSocket(newSocket, "CONNECTED");
 
-  int opponentSocket = rooms[roomId].players[opponentIndexInRoom].socket;
+  int opponentSocket = room->room.players[opponentIndexInRoom].socket;
 
   sleep(1);
 
-  if(checkIfBothPlayerInRoom(roomId)) startGame(roomId);
+  if(checkIfBothPlayersInRoom(room)) startGame(room);
     
   
   for(;;){
@@ -258,7 +277,7 @@ void * socketThread(void *arg){
     char *message = malloc(sizeof(client_message));   
     strcpy(message,client_message);
     
-    opponentSocket = rooms[roomId].players[opponentIndexInRoom].socket;
+    opponentSocket = room->room.players[opponentIndexInRoom].socket;
     printf("(%d) Opponent socket: %d\n", newSocket, opponentSocket);
 
 
@@ -277,7 +296,7 @@ void * socketThread(void *arg){
     }
 
     // if is not player turn
-    if(rooms[roomId].players[playerIndexInRoom].turn == 0){
+    if(room->room.players[playerIndexInRoom].turn == 0){
       sendMsgToSocket(newSocket, "SERVERMSG not_turn");
       memset(&client_message, 0, sizeof(client_message));
       printf("(%d) not your turn.\n\n", newSocket);
@@ -291,109 +310,109 @@ void * socketThread(void *arg){
     int j = cj - 48;
     int mark = cmark - 48;
     
-    if(!canInsertToBoard(i, j, roomId)){
+    if(!canInsertToBoard(i, j, room)){
       printf("(%d) invalid move. Already placed mark.\n\n", newSocket);
       sendMsgToSocket(newSocket, "SERVERMSG invalid_move1");
       continue;
     }
     
-    if(!validMovei(i, rooms[roomId].lastMovei)){
+    if(!validMovei(i, room->room.lastMovei)){
       printf("(%d) invalid move. Wrong square.\n\n", newSocket);
       sendMsgToSocket(newSocket, "SERVERMSG invalid_move2");
       continue;
     }
     
     //insert move to board
-    rooms[roomId].board.board[i][j] = mark;
+    room->room.board.board[i][j] = mark;
 
     char moveMsg[11] = "MOVE _ _ _";
     moveMsg[5] = ci;
     moveMsg[7] = cj;
     moveMsg[9] = cmark;    
-    sendMsgToRoom(roomId, moveMsg);
+    sendMsgToRoom(room, moveMsg);
     sleep(1);
 
 
     //check for sdraws
-    if(checkSdraw(rooms[roomId].board.board[i])){
-      rooms[roomId].wb.wb[i] = 3;
+    if(checkSdraw(room->room.board.board[i])){
+      room->room.wb.wb[i] = 3;
       char sdrawMsg[8] = "SDRAW _";
       sdrawMsg[6] = ci;
-      sendMsgToRoom(roomId, sdrawMsg);
+      sendMsgToRoom(room, sdrawMsg);
       sleep(1);
     }
       
     //check if small win
-    if(checkWin(rooms[roomId].board.board[i])){
-      rooms[roomId].wb.wb[i] = mark;
+    if(checkWin(room->room.board.board[i])){
+      room->room.wb.wb[i] = mark;
       char swinMsg[9] = "SWIN _ _";
       swinMsg[5] = ci;
-      swinMsg[7] = cmark;
-      
-      sendMsgToRoom(roomId, swinMsg);
+      swinMsg[7] = cmark;   
+      sendMsgToRoom(room, swinMsg);
+      sleep(1);
     }
 
     //check if big win
-    if(checkWin(rooms[roomId].wb.wb)){
+    if(checkWin(room->room.wb.wb)){
       sendMsgToSocket(newSocket, "BWIN WIN");
       sendMsgToSocket(opponentSocket, "BWIN LOST");
       memset(&client_message, 0, sizeof(client_message));
-      printf("Game in room: %d ended. \n\n", roomId);
+      printf("Game ended. (%d) won. \n\n", newSocket);
       continue;
     }
 
     //check if big draw
-    if(checkSdraw(rooms[roomId].wb.wb)){
-      sendMsgToSocket(newSocket, "BDRAW");
-      sendMsgToSocket(opponentSocket, "BDRAW");
+    if(checkSdraw(room->room.wb.wb)){
+      sendMsgToRoom(room, "BDRAW");
       memset(&client_message, 0, sizeof(client_message));
       continue;
     }
 
     //if next move is in won square or draw square let next user to input everywhere
-    if(rooms[roomId].wb.wb[j] != 0){
-      rooms[roomId].lastMovei = 10; //10 means next player can place move everywhere
+    if(room->room.wb.wb[j] != 0){
+      room->room.lastMovei = 10; //10 means next player can place move everywhere
     } else {
-      rooms[roomId].lastMovei = j;
+      room->room.lastMovei = j;
     }
 
     //swap turns
-    rooms[roomId].players[playerIndexInRoom].turn = 0;
-    rooms[roomId].players[opponentIndexInRoom].turn = 1;
+    room->room.players[playerIndexInRoom].turn = 0;
+    room->room.players[opponentIndexInRoom].turn = 1;
     sendMsgToSocket(newSocket, "TURN 0");
     sendMsgToSocket(opponentSocket, "TURN 1");
     
-    printBoard(rooms[roomId].board.board, rooms[roomId].wb.wb);
+    printBoard(room->room.board.board, room->room.wb.wb);
+
+    printf("Room:\n");
+    printf("p1 turn: %d, p2 turn %d\n", room->room.players[0].turn, room->room.players[0].turn);
       
     memset(&client_message, 0, sizeof(client_message));
   }
 
   printf("Exit socketThread \n");
-  struct player emptyPlayer = createEmptyPlayer();
-  
-  rooms[roomId].players[playerIndexInRoom] = emptyPlayer;
+    
+  removePlayerFromRoom(newSocket);
+
   struct board b; 
   struct wBoard wb;
-
   for(int i=0; i<9;i++){
     for(int j=0; j<9; j++){
       b.board[i][j] = 0;
     }
   }
   for(int i=0; i<9; i++){wb.wb[i] = 0;}
-  rooms[roomId].board = b;
-  rooms[roomId].wb = wb;
-  rooms[roomId].lastMovei = 10;
-
-  printRooms();
+  room->room.board = b;
+  room->room.wb = wb;
+  room->room.lastMovei = 10;
   
   //when u are leaving send info to your opponent
-  opponentSocket = rooms[roomId].players[opponentIndexInRoom].socket;
+  opponentSocket = room->room.players[opponentIndexInRoom].socket;
   
   if(opponentSocket != 0){
     sendMsgToSocket(opponentSocket, "SERVERMSG opponent_left");
   }
   
+  printRooms2();
   memset(&client_message, 0, sizeof(client_message));
   pthread_exit(NULL);
 }
@@ -404,11 +423,7 @@ int main(){
   int serverSocket, newSocket;
   struct sockaddr_storage serverStorage;
   socklen_t addr_size;
-
-  struct room emptyRoom = createEmptyRoom();
   
-  for(int i=0; i<3; i++){rooms[i] = emptyRoom;}
-
 
   serverSocket = initServerSocket();
 
@@ -423,4 +438,24 @@ int main(){
     pthread_detach(thread_id);    
   }
   return 0;
+}
+
+struct room createEmptyRoom(){
+  struct room room;
+  struct board b; 
+  struct wBoard wb;
+  struct player p = createEmptyPlayer(0);
+
+  for(int i=0; i<9;i++){
+    for(int j=0; j<9; j++){b.board[i][j] = 0;}
+  }
+  for(int i=0; i<9; i++){wb.wb[i] = 0;}
+
+  for(int i=0; i<2; i++){room.players[i] = p;}
+  
+  room.board = b;
+  room.wb = wb;
+  room.lastMovei = 10;
+
+  return room;
 }
